@@ -1,0 +1,451 @@
+openapi: 3.1.0
+info:
+  title: Gallery Server API
+  version: 1.0.0
+  description: |
+    Gin-based gallery server backed by PostgreSQL, SeaweedFS, Imaginary, Qdrant, and Valkey.
+    Read and write authentication can be provided either by header token or the `token` query parameter.
+servers:
+  - url: http://localhost:8080
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+    ReadTokenHeader:
+      type: apiKey
+      in: header
+      name: X-Read-Token
+    WriteTokenHeader:
+      type: apiKey
+      in: header
+      name: X-Write-Token
+    GenericTokenHeader:
+      type: apiKey
+      in: header
+      name: X-API-Token
+    QueryToken:
+      type: apiKey
+      in: query
+      name: token
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+    Tag:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+      required: [id, name, created_at]
+    Image:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        filename:
+          type: string
+        fid:
+          type: string
+        file_size:
+          type: integer
+          format: int64
+        width:
+          type: integer
+        height:
+          type: integer
+        mime_type:
+          type: string
+        phash:
+          type: integer
+          format: int64
+        is_animated:
+          type: boolean
+        description:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+      required: [id, filename, fid, file_size, mime_type, phash, is_animated, description, created_at]
+    ImageWithTags:
+      allOf:
+        - $ref: '#/components/schemas/Image'
+        - type: object
+          properties:
+            tags:
+              type: array
+              items:
+                $ref: '#/components/schemas/Tag'
+          required: [tags]
+    TagListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Tag'
+      required: [items]
+    ImageListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ImageWithTags'
+        page:
+          type: integer
+        page_size:
+          type: integer
+      required: [items, page, page_size]
+    ImageDescriptionRequest:
+      type: object
+      properties:
+        description:
+          type: string
+          description: Empty string clears the image description.
+      required: [description]
+paths:
+  /v1/tags:
+    get:
+      summary: List tags
+      description: Tag lookup is case-insensitive.
+      security:
+        - BearerAuth: []
+        - ReadTokenHeader: []
+        - WriteTokenHeader: []
+        - GenericTokenHeader: []
+        - QueryToken: []
+      parameters:
+        - in: query
+          name: q
+          schema:
+            type: string
+          description: Case-insensitive search text.
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+      responses:
+        '200':
+          description: Tag list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TagListResponse'
+        '401':
+          description: Unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      summary: Create tag
+      description: Tag creation is globally case-insensitive unique while preserving the original casing of the first successful insert.
+      security:
+        - BearerAuth: []
+        - WriteTokenHeader: []
+        - GenericTokenHeader: []
+        - QueryToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  maxLength: 64
+              required: [name]
+      responses:
+        '201':
+          description: Tag created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tag'
+        '400':
+          description: Invalid request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Tag already exists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/images/upload:
+    post:
+      summary: Upload image
+      description: Tag names are matched case-insensitively against existing tags during upload.
+      security:
+        - BearerAuth: []
+        - WriteTokenHeader: []
+        - GenericTokenHeader: []
+        - QueryToken: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                tags:
+                  oneOf:
+                    - type: string
+                    - type: array
+                      items:
+                        type: string
+                force:
+                  type: boolean
+              required: [file]
+      responses:
+        '201':
+          description: Image uploaded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageWithTags'
+        '400':
+          description: Invalid request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Duplicate image detected.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/images:
+    get:
+      summary: List images
+      security:
+        - BearerAuth: []
+        - ReadTokenHeader: []
+        - WriteTokenHeader: []
+        - GenericTokenHeader: []
+        - QueryToken: []
+      parameters:
+        - in: query
+          name: tag
+          schema:
+            type: string
+          description: Repeatable tag filter. Matching is case-insensitive.
+        - in: query
+          name: tags
+          schema:
+            type: string
+          description: Comma-separated tag filter. Matching is case-insensitive.
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - in: query
+          name: page_size
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Image list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageListResponse'
+        '401':
+          description: Unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/images/{id}:
+    get:
+      summary: Get image metadata
+      security:
+        - BearerAuth: []
+        - ReadTokenHeader: []
+        - WriteTokenHeader: []
+        - GenericTokenHeader: []
+        - QueryToken: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Image metadata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageWithTags'
+        '400':
+          description: Invalid image id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Image not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/images/{id}/description:
+    post:
+      summary: Set image description
+      description: Creates, replaces, or clears the description of an existing image.
+      security:
+        - BearerAuth: []
+        - WriteTokenHeader: []
+        - GenericTokenHeader: []
+        - QueryToken: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImageDescriptionRequest'
+      responses:
+        '200':
+          description: Image description updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageWithTags'
+        '400':
+          description: Invalid request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Image not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/images/{id}/render:
+    get:
+      summary: Render transformed image via Imaginary
+      description: If no transform params are provided, the original image is returned. If `fit` or `quality` is provided, at least one of `w` or `h` is required.
+      security:
+        - BearerAuth: []
+        - ReadTokenHeader: []
+        - WriteTokenHeader: []
+        - GenericTokenHeader: []
+        - QueryToken: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - in: query
+          name: w
+          schema:
+            type: integer
+            minimum: 1
+        - in: query
+          name: h
+          schema:
+            type: integer
+            minimum: 1
+        - in: query
+          name: fit
+          schema:
+            type: string
+            enum: [cover, contain, fill, inside, outside]
+        - in: query
+          name: quality
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+        - in: query
+          name: format
+          schema:
+            type: string
+            enum: [jpeg, jpg, png, webp, auto]
+      responses:
+        '200':
+          description: Rendered image bytes.
+          content:
+            image/*:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: Invalid render parameters.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Image not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'

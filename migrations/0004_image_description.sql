@@ -1,0 +1,2 @@
+ALTER TABLE images
+    ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT '';

@@ -1,0 +1,152 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      ALL_PROXY: ""
+      all_proxy: ""
+      NO_PROXY: "localhost,127.0.0.1,postgres,valkey,qdrant,seaweed-master,seaweed-volume,seaweed-filer,imaginary"
+      no_proxy: "localhost,127.0.0.1,postgres,valkey,qdrant,seaweed-master,seaweed-volume,seaweed-filer,imaginary"
+      GRPC_GO_DISABLE_PROXY: "true"
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      seaweed-master:
+        condition: service_started
+      seaweed-volume:
+        condition: service_started
+      imaginary:
+        condition: service_started
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: gallery
+      POSTGRES_USER: gallery
+      POSTGRES_PASSWORD: gallery
+    # ports:
+    #   - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gallery -d gallery"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    restart: unless-stopped
+    # ports:
+    #   - "${VALKEY_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    restart: unless-stopped
+    # ports:
+    #   - "${QDRANT_HTTP_PORT:-6333}:6333"
+    #   - "${QDRANT_GRPC_PORT:-6334}:6334"
+    volumes:
+      - qdrant-data:/qdrant/storage
+
+  seaweed-master:
+    image: chrislusf/seaweedfs:latest
+    restart: unless-stopped
+    environment:
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      ALL_PROXY: ""
+      all_proxy: ""
+      NO_PROXY: "localhost,127.0.0.1,seaweed-master,seaweed-volume,seaweed-filer"
+      no_proxy: "localhost,127.0.0.1,seaweed-master,seaweed-volume,seaweed-filer"
+      GRPC_GO_DISABLE_PROXY: "true"
+    command: ["master", "-ip=seaweed-master", "-mdir=/data"]
+    # ports:
+    #   - "${SEAWEED_MASTER_PORT:-9333}:9333"
+    volumes:
+      - seaweed-master-data:/data
+
+  seaweed-volume:
+    image: chrislusf/seaweedfs:latest
+    restart: unless-stopped
+    environment:
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      ALL_PROXY: ""
+      all_proxy: ""
+      NO_PROXY: "localhost,127.0.0.1,seaweed-master,seaweed-volume,seaweed-filer"
+      no_proxy: "localhost,127.0.0.1,seaweed-master,seaweed-volume,seaweed-filer"
+      GRPC_GO_DISABLE_PROXY: "true"
+    command: ["volume", "-mserver=seaweed-master:9333", "-ip=seaweed-volume", "-dir=/data", "-port=8080"]
+    depends_on:
+      - seaweed-master
+    # ports:
+    #   - "${SEAWEED_VOLUME_PORT:-8081}:8080"
+    volumes:
+      - seaweed-volume-data:/data
+
+  seaweed-filer:
+    image: chrislusf/seaweedfs:latest
+    restart: unless-stopped
+    environment:
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      ALL_PROXY: ""
+      all_proxy: ""
+      NO_PROXY: "localhost,127.0.0.1,seaweed-master,seaweed-volume,seaweed-filer"
+      no_proxy: "localhost,127.0.0.1,seaweed-master,seaweed-volume,seaweed-filer"
+      GRPC_GO_DISABLE_PROXY: "true"
+    command: ["filer", "-master=seaweed-master:9333"]
+    depends_on:
+      - seaweed-master
+    # ports:
+    #   - "${SEAWEED_FILER_PORT:-8888}:8888"
+
+  imaginary:
+    image: h2non/imaginary:latest
+    restart: unless-stopped
+    environment:
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      ALL_PROXY: ""
+      all_proxy: ""
+      NO_PROXY: "localhost,127.0.0.1,seaweed-master,seaweed-volume,seaweed-filer,imaginary"
+      no_proxy: "localhost,127.0.0.1,seaweed-master,seaweed-volume,seaweed-filer,imaginary"
+    command: ["-enable-url-source"]
+    # ports:
+    #   - "${IMAGINARY_PORT:-9000}:9000"
+
+volumes:
+  postgres-data:
+  qdrant-data:
+  seaweed-master-data:
+  seaweed-volume-data:

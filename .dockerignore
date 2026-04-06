@@ -1,0 +1,9 @@
+.git
+.github
+.deploy
+.env
+server
+coverage.out
+bin
+.dist
+.tmp
