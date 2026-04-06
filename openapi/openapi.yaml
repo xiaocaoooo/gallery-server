@@ -113,6 +113,16 @@ components:
           type: string
           description: Empty string clears the image description.
       required: [description]
+    ImageUploadConflictResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        duplicate_image_id:
+          type: integer
+          format: int64
+          description: Present when upload deduplication matched an existing image.
+      required: [error]
 paths:
   /v1/tags:
     get:
@@ -241,11 +251,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: Duplicate image detected.
+          description: Duplicate image detected. When the duplicate maps to an existing image, `duplicate_image_id` is returned.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ImageUploadConflictResponse'
   /v1/images:
     get:
       summary: List images

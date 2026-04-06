@@ -14,11 +14,19 @@ func writeError(c *gin.Context, status int, message string) {
 }
 
 func handleError(c *gin.Context, err error) {
+	var duplicateErr *apperr.DuplicateImageConflictError
+
 	switch {
 	case err == nil:
 		return
 	case errors.Is(err, apperr.ErrValidation):
 		writeError(c, http.StatusBadRequest, err.Error())
+	case errors.As(err, &duplicateErr):
+		payload := gin.H{"error": err.Error()}
+		if duplicateErr.DuplicateImageID > 0 {
+			payload["duplicate_image_id"] = duplicateErr.DuplicateImageID
+		}
+		c.AbortWithStatusJSON(http.StatusConflict, payload)
 	case errors.Is(err, apperr.ErrConflict):
 		writeError(c, http.StatusConflict, err.Error())
 	case errors.Is(err, apperr.ErrNotFound):

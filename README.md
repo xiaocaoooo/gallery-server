@@ -335,6 +335,7 @@ Authorization Bearer > 专用 Header > X-API-Token > token 查询参数
   - `phash`
   - `is_animated`
 - 默认会做重复检测；传 `force=true` 可跳过。
+- 如果命中已存在图片，接口会返回 `409`，并尽量附带 `duplicate_image_id` 指向已存在图片。
 
 ### 图片筛选
 
@@ -415,6 +416,15 @@ curl -X POST "$BASE_URL/v1/images/upload" \
   -H "Authorization: Bearer $WRITE_TOKEN" \
   -F "file=@./example.png" \
   -F "force=true"
+```
+
+如果上传命中重复图，返回示例：
+
+```json
+{
+  "error": "conflict: an image with the same perceptual hash already exists",
+  "duplicate_image_id": 123
+}
 ```
 
 ### 4）列出图片

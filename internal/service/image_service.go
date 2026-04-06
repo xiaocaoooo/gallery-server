@@ -105,7 +105,7 @@ func (s *ImageService) Upload(ctx context.Context, req model.UploadRequest) (mod
 			return model.ImageWithTags{}, err
 		}
 		if existing != nil {
-			return model.ImageWithTags{}, apperr.Conflictf("an image with the same perceptual hash already exists")
+			return model.ImageWithTags{}, apperr.DuplicateImageConflictf(existing.ID, "an image with the same perceptual hash already exists")
 		}
 
 		matches, err := s.vectorStore.SearchSimilar(ctx, features.Vector, s.threshold, s.searchLimit)
@@ -114,7 +114,7 @@ func (s *ImageService) Upload(ctx context.Context, req model.UploadRequest) (mod
 		}
 		for _, match := range matches {
 			if match.Score >= s.threshold {
-				return model.ImageWithTags{}, apperr.Conflictf("an image with a similar vector already exists")
+				return model.ImageWithTags{}, apperr.DuplicateImageConflictf(match.ImageID, "an image with a similar vector already exists")
 			}
 		}
 	}

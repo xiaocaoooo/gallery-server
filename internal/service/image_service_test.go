@@ -156,6 +156,13 @@ func TestUploadReturnsConflictOnPhashMatch(t *testing.T) {
 	if err == nil || !errors.Is(err, apperr.ErrConflict) {
 		t.Fatalf("expected conflict error, got %v", err)
 	}
+	var duplicateErr *apperr.DuplicateImageConflictError
+	if !errors.As(err, &duplicateErr) {
+		t.Fatalf("expected duplicate image conflict error, got %T", err)
+	}
+	if duplicateErr.DuplicateImageID != 1 {
+		t.Fatalf("expected duplicate image id 1, got %d", duplicateErr.DuplicateImageID)
+	}
 }
 
 func TestUploadReturnsConflictOnVectorMatch(t *testing.T) {
@@ -166,6 +173,13 @@ func TestUploadReturnsConflictOnVectorMatch(t *testing.T) {
 	_, err := service.Upload(context.Background(), model.UploadRequest{Filename: "test.png", Data: makeTestPNG(t)})
 	if err == nil || !errors.Is(err, apperr.ErrConflict) {
 		t.Fatalf("expected conflict error, got %v", err)
+	}
+	var duplicateErr *apperr.DuplicateImageConflictError
+	if !errors.As(err, &duplicateErr) {
+		t.Fatalf("expected duplicate image conflict error, got %T", err)
+	}
+	if duplicateErr.DuplicateImageID != 42 {
+		t.Fatalf("expected duplicate image id 42, got %d", duplicateErr.DuplicateImageID)
 	}
 }
 
