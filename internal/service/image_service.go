@@ -182,7 +182,7 @@ func (s *ImageService) Upload(ctx context.Context, req model.UploadRequest) (mod
 	return model.ImageWithTags{Image: createdImage, Tags: tags}, nil
 }
 
-func (s *ImageService) List(ctx context.Context, filter model.ImageListFilter) ([]model.ImageWithTags, error) {
+func (s *ImageService) List(ctx context.Context, filter model.ImageListFilter) (model.ImageListResult, error) {
 	if filter.Page <= 0 {
 		filter.Page = 1
 	}
@@ -193,21 +193,51 @@ func (s *ImageService) List(ctx context.Context, filter model.ImageListFilter) (
 		filter.PageSize = s.maxPage
 	}
 
+	total, err := s.store.CountImages(ctx, filter)
+	if err != nil {
+		return model.ImageListResult{}, err
+	}
+	if total == 0 {
+		return model.ImageListResult{
+			Items:    []model.ImageWithTags{},
+			Page:     filter.Page,
+			PageSize: filter.PageSize,
+			Total:    0,
+		}, nil
+	}
+
 	images, err := s.store.ListImages(ctx, filter)
 	if err != nil {
-		return nil, err
+		return model.ImageListResult{}, err
 	}
 
 	items := make([]model.ImageWithTags, 0, len(images))
 	for _, image := range images {
 		tags, err := s.store.ListImageTags(ctx, image.ID)
 		if err != nil {
-			return nil, err
+			return model.ImageListResult{}, err
 		}
 		items = append(items, model.ImageWithTags{Image: image, Tags: tags})
 	}
 
-	return items, nil
+	return model.ImageListResult{
+		Items:    items,
+		Page:     filter.Page,
+		PageSize: filter.PageSize,
+		Total:    total,
+	}, nil
+}
+
+func (s *ImageService) Random(ctx context.Context, filter model.ImageListFilter) (model.ImageWithTags, error) {
+	image, err := s.store.GetRandomImage(ctx, filter)
+	if err != nil {
+		return model.ImageWithTags{}, err
+	}
+	tags, err := s.store.ListImageTags(ctx, image.ID)
+	if err != nil {
+		return model.ImageWithTags{}, err
+	}
+	return model.ImageWithTags{Image: image, Tags: tags}, nil
 }
 
 func (s *ImageService) Get(ctx context.Context, id string) (model.ImageWithTags, error) {

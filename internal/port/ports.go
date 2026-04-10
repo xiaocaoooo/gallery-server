@@ -23,7 +23,9 @@ type ImageStore interface {
 	FindImageByPhash(ctx context.Context, phash int64) (*model.Image, error)
 	GetImageByID(ctx context.Context, id int64) (model.Image, error)
 	UpdateImageDescription(ctx context.Context, imageID int64, description string) (model.Image, error)
+	CountImages(ctx context.Context, filter model.ImageListFilter) (int64, error)
 	ListImages(ctx context.Context, filter model.ImageListFilter) ([]model.Image, error)
+	GetRandomImage(ctx context.Context, filter model.ImageListFilter) (model.Image, error)
 	ListImageTags(ctx context.Context, imageID int64) ([]model.Tag, error)
 	WithTx(ctx context.Context, fn func(ImageWriteStore) error) error
 }

@@ -65,7 +65,7 @@ func (h *ImageHandler) Upload(c *gin.Context) {
 func (h *ImageHandler) List(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
-	items, err := h.service.List(c.Request.Context(), model.ImageListFilter{
+	result, err := h.service.List(c.Request.Context(), model.ImageListFilter{
 		Tags:     collectTagFilters(c),
 		Page:     page,
 		PageSize: pageSize,
@@ -75,11 +75,18 @@ func (h *ImageHandler) List(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"items":     items,
-		"page":      page,
-		"page_size": pageSize,
+	c.JSON(http.StatusOK, result)
+}
+
+func (h *ImageHandler) Random(c *gin.Context) {
+	image, err := h.service.Random(c.Request.Context(), model.ImageListFilter{
+		Tags: collectTagFilters(c),
 	})
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, image)
 }
 
 func (h *ImageHandler) Get(c *gin.Context) {

@@ -105,7 +105,10 @@ components:
           type: integer
         page_size:
           type: integer
-      required: [items, page, page_size]
+        total:
+          type: integer
+          format: int64
+      required: [items, page, page_size, total]
     ImageDescriptionRequest:
       type: object
       properties:
@@ -298,6 +301,45 @@ paths:
                 $ref: '#/components/schemas/ImageListResponse'
         '401':
           description: Unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/images/random:
+    get:
+      summary: Get a random image
+      security:
+        - BearerAuth: []
+        - ReadTokenHeader: []
+        - WriteTokenHeader: []
+        - GenericTokenHeader: []
+        - QueryToken: []
+      parameters:
+        - in: query
+          name: tag
+          schema:
+            type: string
+          description: Repeatable tag filter. Matching is case-insensitive.
+        - in: query
+          name: tags
+          schema:
+            type: string
+          description: Comma-separated tag filter. Matching is case-insensitive.
+      responses:
+        '200':
+          description: Random image metadata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageWithTags'
+        '401':
+          description: Unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No image matched the filter.
           content:
             application/json:
               schema:

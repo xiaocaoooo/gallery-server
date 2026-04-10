@@ -56,6 +56,7 @@ func (f *routerFakeTagStore) GetTagsByNamesInsensitive(_ context.Context, names 
 
 type routerFakeImageStore struct {
 	images     map[int64]model.Image
+	imageTags  map[int64][]model.Tag
 	phashMatch *model.Image
 }
 
@@ -81,15 +82,52 @@ func (f *routerFakeImageStore) UpdateImageDescription(_ context.Context, imageID
 	f.images[imageID] = image
 	return image, nil
 }
-func (f *routerFakeImageStore) ListImages(context.Context, model.ImageListFilter) ([]model.Image, error) {
+func (f *routerFakeImageStore) CountImages(_ context.Context, filter model.ImageListFilter) (int64, error) {
+	return int64(len(f.filterImages(filter))), nil
+}
+func (f *routerFakeImageStore) ListImages(_ context.Context, filter model.ImageListFilter) ([]model.Image, error) {
+	return f.filterImages(filter), nil
+}
+func (f *routerFakeImageStore) GetRandomImage(_ context.Context, filter model.ImageListFilter) (model.Image, error) {
+	items := f.filterImages(filter)
+	if len(items) == 0 {
+		return model.Image{}, apperr.NotFoundf("image not found")
+	}
+	return items[0], nil
+}
+func (f *routerFakeImageStore) ListImageTags(_ context.Context, imageID int64) ([]model.Tag, error) {
+	return f.imageTags[imageID], nil
+}
+
+func (f *routerFakeImageStore) filterImages(filter model.ImageListFilter) []model.Image {
 	items := make([]model.Image, 0, len(f.images))
 	for _, image := range f.images {
+		if !matchImageFilterTags(f.imageTags[image.ID], filter.Tags) {
+			continue
+		}
 		items = append(items, image)
 	}
-	return items, nil
+	return items
 }
-func (*routerFakeImageStore) ListImageTags(context.Context, int64) ([]model.Tag, error) {
-	return []model.Tag{}, nil
+
+func matchImageFilterTags(tags []model.Tag, required []string) bool {
+	if len(required) == 0 {
+		return true
+	}
+	seen := make(map[string]struct{}, len(tags))
+	for _, tag := range tags {
+		seen[strings.ToLower(strings.TrimSpace(tag.Name))] = struct{}{}
+	}
+	for _, name := range required {
+		normalized := strings.ToLower(strings.TrimSpace(name))
+		if normalized == "" {
+			continue
+		}
+		if _, ok := seen[normalized]; !ok {
+			return false
+		}
+	}
+	return true
 }
 func (f *routerFakeImageStore) WithTx(_ context.Context, fn func(port.ImageWriteStore) error) error {
 	return fn(routerFakeImageWriteStore{store: f})
@@ -218,6 +256,120 @@ func TestRouterAuthModes(t *testing.T) {
 	})
 }
 
+func TestRouterListImagesIncludesTotal(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := newTestRouter(config.Config{Auth: config.AuthConfig{ReadToken: "read-secret", WriteToken: "write-secret"}})
+
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/images?token=read-secret", nil)
+	router.ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d with body %s", recorder.Code, recorder.Body.String())
+	}
+
+	var response struct {
+		Items    []model.ImageWithTags `json:"items"`
+		Page     int                   `json:"page"`
+		PageSize int                   `json:"page_size"`
+		Total    int64                 `json:"total"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode list response: %v", err)
+	}
+	if response.Total != 1 {
+		t.Fatalf("expected total 1, got %d", response.Total)
+	}
+}
+
+func TestRouterRandomImageRoute(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := newTestRouter(config.Config{Auth: config.AuthConfig{ReadToken: "read-secret", WriteToken: "write-secret"}})
+
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/images/random?token=read-secret", nil)
+	router.ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d with body %s", recorder.Code, recorder.Body.String())
+	}
+
+	var image model.ImageWithTags
+	if err := json.Unmarshal(recorder.Body.Bytes(), &image); err != nil {
+		t.Fatalf("decode random image response: %v", err)
+	}
+	if image.ID == 0 {
+		t.Fatalf("expected non-zero image id, got %+v", image)
+	}
+}
+
+func TestRouterListImagesSupportsTagFilters(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	imageStore := &routerFakeImageStore{
+		images: map[int64]model.Image{
+			1: {ID: 1, Filename: "cat-cover.webp", FID: "fid-1", MimeType: "image/webp"},
+			2: {ID: 2, Filename: "cat.webp", FID: "fid-2", MimeType: "image/webp"},
+		},
+		imageTags: map[int64][]model.Tag{
+			1: {{ID: 1, Name: "Cat"}, {ID: 2, Name: "Cover"}},
+			2: {{ID: 1, Name: "Cat"}},
+		},
+	}
+	router := newTestRouterWithImageStore(config.Config{Auth: config.AuthConfig{ReadToken: "read-secret", WriteToken: "write-secret"}}, imageStore)
+
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/images?tags=Cat,Cover&token=read-secret", nil)
+	router.ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d with body %s", recorder.Code, recorder.Body.String())
+	}
+
+	var response struct {
+		Items []model.ImageWithTags `json:"items"`
+		Total int64                 `json:"total"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode filtered list response: %v", err)
+	}
+	if response.Total != 1 {
+		t.Fatalf("expected filtered total 1, got %d", response.Total)
+	}
+	if len(response.Items) != 1 || response.Items[0].ID != 1 {
+		t.Fatalf("expected only image 1, got %+v", response.Items)
+	}
+}
+
+func TestRouterRandomImageRouteSupportsTagFilters(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	imageStore := &routerFakeImageStore{
+		images: map[int64]model.Image{
+			1: {ID: 1, Filename: "cat.webp", FID: "fid-1", MimeType: "image/webp"},
+			2: {ID: 2, Filename: "cover.webp", FID: "fid-2", MimeType: "image/webp"},
+		},
+		imageTags: map[int64][]model.Tag{
+			1: {{ID: 1, Name: "Cat"}},
+			2: {{ID: 2, Name: "Cover"}},
+		},
+	}
+	router := newTestRouterWithImageStore(config.Config{Auth: config.AuthConfig{ReadToken: "read-secret", WriteToken: "write-secret"}}, imageStore)
+
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/images/random?tag=Cover&token=read-secret", nil)
+	router.ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d with body %s", recorder.Code, recorder.Body.String())
+	}
+
+	var image model.ImageWithTags
+	if err := json.Unmarshal(recorder.Body.Bytes(), &image); err != nil {
+		t.Fatalf("decode filtered random image response: %v", err)
+	}
+	if image.ID != 2 {
+		t.Fatalf("expected image id 2, got %+v", image)
+	}
+	if len(image.Tags) != 1 || image.Tags[0].Name != "Cover" {
+		t.Fatalf("expected cover tag, got %+v", image)
+	}
+}
+
 func TestRouterUploadReturnsDuplicateImageID(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -337,9 +489,14 @@ func TestRouterOpenAuthWhenTokensEmpty(t *testing.T) {
 }
 
 func newTestRouter(cfg config.Config) *gin.Engine {
-	return newTestRouterWithImageStore(cfg, &routerFakeImageStore{images: map[int64]model.Image{
-		1: {ID: 1, Filename: "seed.webp", FID: "fid", MimeType: "image/webp", Description: ""},
-	}})
+	return newTestRouterWithImageStore(cfg, &routerFakeImageStore{
+		images: map[int64]model.Image{
+			1: {ID: 1, Filename: "seed.webp", FID: "fid", MimeType: "image/webp", Description: ""},
+		},
+		imageTags: map[int64][]model.Tag{
+			1: {{ID: 1, Name: "Seed", CreatedAt: time.Now().UTC()}},
+		},
+	})
 }
 
 func newTestRouterWithImageStore(cfg config.Config, imageStore *routerFakeImageStore) *gin.Engine {

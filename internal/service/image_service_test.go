@@ -68,12 +68,55 @@ func (f *fakeImageStore) UpdateImageDescription(_ context.Context, imageID int64
 	return model.Image{}, apperr.NotFoundf("image not found")
 }
 
-func (f *fakeImageStore) ListImages(context.Context, model.ImageListFilter) ([]model.Image, error) {
-	return f.images, nil
+func (f *fakeImageStore) CountImages(_ context.Context, filter model.ImageListFilter) (int64, error) {
+	return int64(len(f.filterImages(filter))), nil
+}
+
+func (f *fakeImageStore) ListImages(_ context.Context, filter model.ImageListFilter) ([]model.Image, error) {
+	return f.filterImages(filter), nil
+}
+
+func (f *fakeImageStore) GetRandomImage(_ context.Context, filter model.ImageListFilter) (model.Image, error) {
+	images := f.filterImages(filter)
+	if len(images) == 0 {
+		return model.Image{}, apperr.NotFoundf("image not found")
+	}
+	return images[0], nil
 }
 
 func (f *fakeImageStore) ListImageTags(_ context.Context, imageID int64) ([]model.Tag, error) {
 	return f.imageTags[imageID], nil
+}
+
+func (f *fakeImageStore) filterImages(filter model.ImageListFilter) []model.Image {
+	items := make([]model.Image, 0, len(f.images))
+	for _, image := range f.images {
+		if !matchImageFilterTags(f.imageTags[image.ID], filter.Tags) {
+			continue
+		}
+		items = append(items, image)
+	}
+	return items
+}
+
+func matchImageFilterTags(tags []model.Tag, required []string) bool {
+	if len(required) == 0 {
+		return true
+	}
+	seen := make(map[string]struct{}, len(tags))
+	for _, tag := range tags {
+		seen[strings.ToLower(strings.TrimSpace(tag.Name))] = struct{}{}
+	}
+	for _, name := range required {
+		normalized := strings.ToLower(strings.TrimSpace(name))
+		if normalized == "" {
+			continue
+		}
+		if _, ok := seen[normalized]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func (f *fakeImageStore) WithTx(_ context.Context, fn func(port.ImageWriteStore) error) error {
@@ -297,6 +340,83 @@ func TestRenderRejectsFitWithoutDimensionsOrInvalidFormat(t *testing.T) {
 	}
 	if _, err := service.Render(context.Background(), "1", model.RenderParams{Format: "gif"}); err == nil || !errors.Is(err, apperr.ErrValidation) {
 		t.Fatalf("expected validation error for unsupported render format, got %v", err)
+	}
+}
+
+func TestListReturnsTotal(t *testing.T) {
+	store := &fakeImageStore{
+		images: []model.Image{{ID: 1}, {ID: 2}},
+		imageTags: map[int64][]model.Tag{
+			1: {{ID: 1, Name: "Cat"}},
+			2: {{ID: 2, Name: "Cover"}},
+		},
+	}
+	service := NewImageService(store, fakeLocker{}, fakeProcessor{converted: makeTestPNG(t)}, fakeObjectStore{fid: "1,1"}, &fakeVectorStore{}, config.UploadConfig{MaxBytes: 1 << 20, DefaultPageSize: 20, MaxPageSize: 100}, config.QdrantConfig{SimilarityThreshold: 0.98, SearchLimit: 5})
+
+	result, err := service.List(context.Background(), model.ImageListFilter{Page: 1, PageSize: 20})
+	if err != nil {
+		t.Fatalf("expected List to succeed, got %v", err)
+	}
+	if result.Total != 2 {
+		t.Fatalf("expected total 2, got %d", result.Total)
+	}
+	if len(result.Items) != 2 {
+		t.Fatalf("expected 2 items, got %d", len(result.Items))
+	}
+	if result.Page != 1 || result.PageSize != 20 {
+		t.Fatalf("unexpected pagination result: %+v", result)
+	}
+}
+
+func TestListAppliesTagFilterToTotalAndItems(t *testing.T) {
+	store := &fakeImageStore{
+		images: []model.Image{{ID: 1}, {ID: 2}},
+		imageTags: map[int64][]model.Tag{
+			1: {{ID: 1, Name: "Cat"}, {ID: 2, Name: "Cover"}},
+			2: {{ID: 1, Name: "Cat"}},
+		},
+	}
+	service := NewImageService(store, fakeLocker{}, fakeProcessor{converted: makeTestPNG(t)}, fakeObjectStore{fid: "1,1"}, &fakeVectorStore{}, config.UploadConfig{MaxBytes: 1 << 20, DefaultPageSize: 20, MaxPageSize: 100}, config.QdrantConfig{SimilarityThreshold: 0.98, SearchLimit: 5})
+
+	result, err := service.List(context.Background(), model.ImageListFilter{Tags: []string{"cat", "cover"}, Page: 1, PageSize: 20})
+	if err != nil {
+		t.Fatalf("expected List with tags to succeed, got %v", err)
+	}
+	if result.Total != 1 {
+		t.Fatalf("expected filtered total 1, got %d", result.Total)
+	}
+	if len(result.Items) != 1 || result.Items[0].ID != 1 {
+		t.Fatalf("expected only image 1, got %+v", result.Items)
+	}
+}
+
+func TestRandomReturnsNotFoundWhenNoImage(t *testing.T) {
+	service := NewImageService(&fakeImageStore{}, fakeLocker{}, fakeProcessor{converted: makeTestPNG(t)}, fakeObjectStore{fid: "1,1"}, &fakeVectorStore{}, config.UploadConfig{MaxBytes: 1 << 20, DefaultPageSize: 20, MaxPageSize: 100}, config.QdrantConfig{SimilarityThreshold: 0.98, SearchLimit: 5})
+
+	if _, err := service.Random(context.Background(), model.ImageListFilter{}); err == nil || !errors.Is(err, apperr.ErrNotFound) {
+		t.Fatalf("expected not found error for Random, got %v", err)
+	}
+}
+
+func TestRandomAppliesTagFilterAndReturnsImageWithTags(t *testing.T) {
+	store := &fakeImageStore{
+		images: []model.Image{{ID: 1}, {ID: 2}},
+		imageTags: map[int64][]model.Tag{
+			1: {{ID: 1, Name: "Cat"}},
+			2: {{ID: 2, Name: "Cover"}},
+		},
+	}
+	service := NewImageService(store, fakeLocker{}, fakeProcessor{converted: makeTestPNG(t)}, fakeObjectStore{fid: "1,1"}, &fakeVectorStore{}, config.UploadConfig{MaxBytes: 1 << 20, DefaultPageSize: 20, MaxPageSize: 100}, config.QdrantConfig{SimilarityThreshold: 0.98, SearchLimit: 5})
+
+	item, err := service.Random(context.Background(), model.ImageListFilter{Tags: []string{"cover"}})
+	if err != nil {
+		t.Fatalf("expected Random to succeed, got %v", err)
+	}
+	if item.ID != 2 {
+		t.Fatalf("expected filtered random image id 2, got %d", item.ID)
+	}
+	if len(item.Tags) != 1 || item.Tags[0].Name != "Cover" {
+		t.Fatalf("expected cover tag to be populated, got %+v", item)
 	}
 }
 

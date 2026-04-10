@@ -301,6 +301,7 @@ Authorization Bearer > 专用 Header > X-API-Token > token 查询参数
 
 - `GET /v1/tags`
 - `GET /v1/images`
+- `GET /v1/images/random`
 - `GET /v1/images/{id}`
 - `GET /v1/images/{id}/render`
 
@@ -346,6 +347,16 @@ Authorization Bearer > 专用 Header > X-API-Token > token 查询参数
 - 混合使用
 
 多个标签之间是 **AND** 关系：只有同时拥有所有标签的图片才会返回。
+
+分页响应会额外返回 `total`，表示当前过滤条件下的图片总数。
+
+### 随机图片
+
+`GET /v1/images/random` 支持和 `GET /v1/images` 相同的 `tag` / `tags` 过滤参数。
+
+- 不传过滤条件：从全库随机返回一张图片
+- 传 tag：从满足 **AND** 过滤条件的图片中随机返回一张
+- 如果没有匹配图片：返回 `404`
 
 ### 图片描述
 
@@ -434,14 +445,32 @@ curl "$BASE_URL/v1/images?page=1&page_size=20&tags=Cat,Cover" \
   -H "Authorization: Bearer $READ_TOKEN"
 ```
 
-### 5）获取单张图片元数据
+返回示例：
+
+```json
+{
+  "items": [],
+  "page": 1,
+  "page_size": 20,
+  "total": 0
+}
+```
+
+### 5）随机获取一张图片
+
+```bash
+curl "$BASE_URL/v1/images/random?tags=Cat,Cover" \
+  -H "Authorization: Bearer $READ_TOKEN"
+```
+
+### 6）获取单张图片元数据
 
 ```bash
 curl "$BASE_URL/v1/images/1" \
   -H "Authorization: Bearer $READ_TOKEN"
 ```
 
-### 6）设置图片描述
+### 7）设置图片描述
 
 ```bash
 curl -X POST "$BASE_URL/v1/images/1/description" \
@@ -459,7 +488,7 @@ curl -X POST "$BASE_URL/v1/images/1/description" \
   -d '{"description":""}'
 ```
 
-### 7）渲染缩略图
+### 8）渲染缩略图
 
 ```bash
 curl "$BASE_URL/v1/images/1/render?w=480&h=320&fit=cover&format=jpeg&quality=85" \

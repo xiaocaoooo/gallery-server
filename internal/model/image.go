@@ -27,6 +27,13 @@ type ImageListFilter struct {
 	PageSize int
 }
 
+type ImageListResult struct {
+	Items    []ImageWithTags `json:"items"`
+	Page     int             `json:"page"`
+	PageSize int             `json:"page_size"`
+	Total    int64           `json:"total"`
+}
+
 type UploadRequest struct {
 	Filename string
 	Data     []byte

@@ -22,6 +22,7 @@ func NewRouter(cfg config.Config, tagHandler *handlers.TagHandler, imageHandler 
 	read := api.Group("")
 	read.Use(middleware.RequireReadAuth(cfg.Auth))
 	read.GET("/images", imageHandler.List)
+	read.GET("/images/random", imageHandler.Random)
 	read.GET("/images/:id", imageHandler.Get)
 	read.GET("/images/:id/render", imageHandler.Render)
 	read.GET("/tags", tagHandler.List)
