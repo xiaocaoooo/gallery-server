@@ -6,6 +6,8 @@ import (
 	"errors"
 	"image"
 	"image/color"
+	"image/color/palette"
+	"image/gif"
 	"image/png"
 	"net/http"
 	"strings"
@@ -47,9 +49,9 @@ func (f *fakeImageStore) FindImageByPhash(context.Context, int64) (*model.Image,
 }
 
 func (f *fakeImageStore) GetImageByID(_ context.Context, id int64) (model.Image, error) {
-	for _, image := range f.images {
-		if image.ID == id {
-			return image, nil
+	for _, img := range f.images {
+		if img.ID == id {
+			return img, nil
 		}
 	}
 	return model.Image{}, apperr.NotFoundf("image not found")
@@ -59,8 +61,8 @@ func (f *fakeImageStore) UpdateImageDescription(_ context.Context, imageID int64
 	if f.updateDescriptionErr != nil {
 		return model.Image{}, f.updateDescriptionErr
 	}
-	for i, image := range f.images {
-		if image.ID == imageID {
+	for i, img := range f.images {
+		if img.ID == imageID {
 			f.images[i].Description = description
 			return f.images[i], nil
 		}
@@ -90,11 +92,11 @@ func (f *fakeImageStore) ListImageTags(_ context.Context, imageID int64) ([]mode
 
 func (f *fakeImageStore) filterImages(filter model.ImageListFilter) []model.Image {
 	items := make([]model.Image, 0, len(f.images))
-	for _, image := range f.images {
-		if !matchImageFilterTags(f.imageTags[image.ID], filter.Tags) {
+	for _, img := range f.images {
+		if !matchImageFilterTags(f.imageTags[img.ID], filter.Tags) {
 			continue
 		}
-		items = append(items, image)
+		items = append(items, img)
 	}
 	return items
 }
@@ -252,6 +254,36 @@ func TestUploadForceSkipsDedupAndUsesNumericID(t *testing.T) {
 	}
 }
 
+func TestUploadStoresAnimatedGIFWithoutConvertingToWebP(t *testing.T) {
+	store := &fakeImageStore{}
+	vectorStore := &fakeVectorStore{}
+	service := NewImageService(store, fakeLocker{}, fakeProcessor{converted: makeTestPNG(t)}, fakeObjectStore{fid: "1,1"}, vectorStore, config.UploadConfig{MaxBytes: 1 << 20, DefaultPageSize: 20, MaxPageSize: 100}, config.QdrantConfig{SimilarityThreshold: 0.98, SearchLimit: 5})
+
+	data := makeAnimatedGIF(t)
+	response, err := service.Upload(context.Background(), model.UploadRequest{Filename: "animated.gif", Data: data, Force: true})
+	if err != nil {
+		t.Fatalf("expected animated gif upload to succeed, got %v", err)
+	}
+	if !response.IsAnimated {
+		t.Fatal("expected animated gif to be marked animated")
+	}
+	if response.MimeType != "image/gif" {
+		t.Fatalf("expected animated gif mime type image/gif, got %q", response.MimeType)
+	}
+	if response.FileSize != int64(len(data)) {
+		t.Fatalf("expected stored file size %d, got %d", len(data), response.FileSize)
+	}
+	if len(store.createdImages) != 1 {
+		t.Fatalf("expected one created image, got %d", len(store.createdImages))
+	}
+	if store.createdImages[0].MimeType != "image/gif" {
+		t.Fatalf("expected created image mime type image/gif, got %q", store.createdImages[0].MimeType)
+	}
+	if !store.createdImages[0].IsAnimated {
+		t.Fatal("expected created image to be animated")
+	}
+}
+
 func TestSetDescriptionUpdatesImageAndAllowsClearing(t *testing.T) {
 	store := &fakeImageStore{
 		images: []model.Image{{ID: 1, Description: "old description"}},
@@ -329,17 +361,26 @@ func TestRenderAllowsFormatOrQualityWithoutDimensions(t *testing.T) {
 	if _, err := service.Render(context.Background(), "1", model.RenderParams{Format: "jpeg", Quality: 100}); err != nil {
 		t.Fatalf("expected format conversion without dimensions to use original size, got %v", err)
 	}
+	if _, err := service.Render(context.Background(), "1", model.RenderParams{Format: "gif"}); err != nil {
+		t.Fatalf("expected gif export without dimensions to be allowed, got %v", err)
+	}
 }
 
-func TestRenderRejectsFitWithoutDimensionsOrInvalidFormat(t *testing.T) {
-	store := &fakeImageStore{images: []model.Image{{ID: 1, FID: "1,1", MimeType: "image/webp"}}}
+func TestRenderRejectsFitWithoutDimensionsOrUnsupportedGIFTransforms(t *testing.T) {
+	store := &fakeImageStore{images: []model.Image{{ID: 1, FID: "1,1", MimeType: "image/webp"}, {ID: 2, FID: "2,2", MimeType: "image/gif", IsAnimated: true}}}
 	service := NewImageService(store, fakeLocker{}, fakeProcessor{converted: makeTestPNG(t)}, fakeObjectStore{fid: "1,1"}, &fakeVectorStore{}, config.UploadConfig{MaxBytes: 1 << 20, DefaultPageSize: 20, MaxPageSize: 100}, config.QdrantConfig{SimilarityThreshold: 0.98, SearchLimit: 5})
 
 	if _, err := service.Render(context.Background(), "1", model.RenderParams{Fit: "contain"}); err == nil || !errors.Is(err, apperr.ErrValidation) {
 		t.Fatalf("expected validation error when fit is set without dimensions, got %v", err)
 	}
-	if _, err := service.Render(context.Background(), "1", model.RenderParams{Format: "gif"}); err == nil || !errors.Is(err, apperr.ErrValidation) {
+	if _, err := service.Render(context.Background(), "1", model.RenderParams{Format: "bmp"}); err == nil || !errors.Is(err, apperr.ErrValidation) {
 		t.Fatalf("expected validation error for unsupported render format, got %v", err)
+	}
+	if _, err := service.Render(context.Background(), "1", model.RenderParams{Format: "gif", Quality: 80}); err == nil || !errors.Is(err, apperr.ErrValidation) {
+		t.Fatalf("expected validation error for gif render with quality, got %v", err)
+	}
+	if _, err := service.Render(context.Background(), "2", model.RenderParams{Quality: 80}); err == nil || !errors.Is(err, apperr.ErrValidation) {
+		t.Fatalf("expected validation error for gif source with quality-only render, got %v", err)
 	}
 }
 
@@ -418,6 +459,23 @@ func TestRandomAppliesTagFilterAndReturnsImageWithTags(t *testing.T) {
 	if len(item.Tags) != 1 || item.Tags[0].Name != "Cover" {
 		t.Fatalf("expected cover tag to be populated, got %+v", item)
 	}
+}
+
+func makeAnimatedGIF(t *testing.T) []byte {
+	t.Helper()
+	first := image.NewPaletted(image.Rect(0, 0, 4, 4), palette.Plan9)
+	second := image.NewPaletted(image.Rect(0, 0, 4, 4), palette.Plan9)
+	for y := 0; y < 4; y++ {
+		for x := 0; x < 4; x++ {
+			first.SetColorIndex(x, y, 1)
+			second.SetColorIndex(x, y, 2)
+		}
+	}
+	var buf bytes.Buffer
+	if err := gif.EncodeAll(&buf, &gif.GIF{Image: []*image.Paletted{first, second}, Delay: []int{5, 5}}); err != nil {
+		t.Fatalf("encode gif: %v", err)
+	}
+	return buf.Bytes()
 }
 
 func makeTestPNG(t *testing.T) []byte {

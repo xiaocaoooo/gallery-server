@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"image"
-	_ "image/gif"
+	"image/gif"
 	_ "image/jpeg"
 	_ "image/png"
 	"math"
+	"net/http"
+	"strings"
 
 	_ "golang.org/x/image/webp"
 )
@@ -42,7 +44,7 @@ func Analyze(data []byte) (Features, error) {
 		Height:     bounds.Dy(),
 		PHash:      phash,
 		Vector:     vector,
-		IsAnimated: IsAnimatedWebP(data),
+		IsAnimated: IsAnimated(data),
 	}, nil
 }
 
@@ -113,6 +115,36 @@ func alpha(index, size int) float64 {
 		return math.Sqrt(1.0 / float64(size))
 	}
 	return math.Sqrt(2.0 / float64(size))
+}
+
+func DetectMimeType(data []byte) string {
+	mimeType := strings.ToLower(strings.TrimSpace(http.DetectContentType(data)))
+	if idx := strings.Index(mimeType, ";"); idx >= 0 {
+		mimeType = strings.TrimSpace(mimeType[:idx])
+	}
+	if mimeType == "image/jpg" {
+		return "image/jpeg"
+	}
+	return mimeType
+}
+
+func IsAnimated(data []byte) bool {
+	switch DetectMimeType(data) {
+	case "image/gif":
+		return IsAnimatedGIF(data)
+	case "image/webp":
+		return IsAnimatedWebP(data)
+	default:
+		return false
+	}
+}
+
+func IsAnimatedGIF(data []byte) bool {
+	decoded, err := gif.DecodeAll(bytes.NewReader(data))
+	if err != nil {
+		return false
+	}
+	return len(decoded.Image) > 1
 }
 
 func IsAnimatedWebP(data []byte) bool {

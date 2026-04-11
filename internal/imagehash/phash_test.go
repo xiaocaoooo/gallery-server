@@ -3,6 +3,8 @@ package imagehash
 import (
 	"image"
 	"image/color"
+	"image/color/palette"
+	"image/gif"
 	"image/png"
 	"os"
 	"path/filepath"
@@ -34,6 +36,12 @@ func TestAnalyzeStableOnSameImage(t *testing.T) {
 	}
 }
 
+func TestIsAnimatedGIF(t *testing.T) {
+	if !IsAnimatedGIF(makeAnimatedGIF(t)) {
+		t.Fatal("expected animated gif detection to be true")
+	}
+}
+
 func TestIsAnimatedWebP(t *testing.T) {
 	fixturePath := filepath.Join("testdata", "animated.webp")
 	if err := os.MkdirAll(filepath.Dir(fixturePath), 0o755); err != nil {
@@ -51,6 +59,23 @@ func TestIsAnimatedWebP(t *testing.T) {
 	if !IsAnimatedWebP(loaded) {
 		t.Fatal("expected animated webp detection to be true")
 	}
+}
+
+func makeAnimatedGIF(t *testing.T) []byte {
+	t.Helper()
+	first := image.NewPaletted(image.Rect(0, 0, 4, 4), palette.Plan9)
+	second := image.NewPaletted(image.Rect(0, 0, 4, 4), palette.Plan9)
+	for y := 0; y < 4; y++ {
+		for x := 0; x < 4; x++ {
+			first.SetColorIndex(x, y, 1)
+			second.SetColorIndex(x, y, 2)
+		}
+	}
+	var buf bytesBuffer
+	if err := gif.EncodeAll(&buf, &gif.GIF{Image: []*image.Paletted{first, second}, Delay: []int{5, 5}}); err != nil {
+		t.Fatalf("encode gif: %v", err)
+	}
+	return buf.Bytes()
 }
 
 func makeSolidPNG(t *testing.T, fill color.NRGBA) []byte {

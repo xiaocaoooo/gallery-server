@@ -126,6 +126,29 @@ components:
           format: int64
           description: Present when upload deduplication matched an existing image.
       required: [error]
+    TagCreateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 64
+      required:
+        - name
+    ImageUploadRequest:
+      type: object
+      properties:
+        file:
+          type: string
+          format: binary
+        tags:
+          type: array
+          items:
+            type: string
+          description: Repeated form field values are supported; comma-separated tag strings are also accepted.
+        force:
+          type: boolean
+      required:
+        - file
 paths:
   /v1/tags:
     get:
@@ -175,12 +198,7 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                name:
-                  type: string
-                  maxLength: 64
-              required: [name]
+              $ref: '#/components/schemas/TagCreateRequest'
       responses:
         '201':
           description: Tag created.
@@ -220,20 +238,7 @@ paths:
         content:
           multipart/form-data:
             schema:
-              type: object
-              properties:
-                file:
-                  type: string
-                  format: binary
-                tags:
-                  oneOf:
-                    - type: string
-                    - type: array
-                      items:
-                        type: string
-                force:
-                  type: boolean
-              required: [file]
+              $ref: '#/components/schemas/ImageUploadRequest'
       responses:
         '201':
           description: Image uploaded.
@@ -474,7 +479,7 @@ paths:
           name: format
           schema:
             type: string
-            enum: [jpeg, jpg, png, webp, auto]
+            enum: [gif, jpeg, jpg, png, webp, auto]
       responses:
         '200':
           description: Rendered image bytes.

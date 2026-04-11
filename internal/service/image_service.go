@@ -85,18 +85,34 @@ func (s *ImageService) Upload(ctx context.Context, req model.UploadRequest) (mod
 		}
 	}()
 
-	converted, err := s.processor.ConvertToLosslessWebP(ctx, filename, req.Data)
-	if err != nil {
-		return model.ImageWithTags{}, fmt.Errorf("convert image: %w", err)
-	}
+	sourceMimeType := normalizeSourceMimeType(imagehash.DetectMimeType(req.Data))
+	isAnimated := imagehash.IsAnimated(req.Data)
 
-	features, err := imagehash.Analyze(converted)
-	if err != nil {
+	storedData := req.Data
+	storedMimeType := sourceMimeType
+
+	var features imagehash.Features
+	if isAnimated {
 		features, err = imagehash.Analyze(req.Data)
 		if err != nil {
 			return model.ImageWithTags{}, fmt.Errorf("analyze image features: %w", err)
 		}
-		features.IsAnimated = imagehash.IsAnimatedWebP(converted)
+		features.IsAnimated = true
+	} else {
+		converted, err := s.processor.ConvertToLosslessWebP(ctx, filename, req.Data)
+		if err != nil {
+			return model.ImageWithTags{}, fmt.Errorf("convert image: %w", err)
+		}
+
+		features, err = imagehash.Analyze(converted)
+		if err != nil {
+			features, err = imagehash.Analyze(req.Data)
+			if err != nil {
+				return model.ImageWithTags{}, fmt.Errorf("analyze image features: %w", err)
+			}
+		}
+		storedData = converted
+		storedMimeType = "image/webp"
 	}
 
 	if !req.Force {
@@ -119,7 +135,7 @@ func (s *ImageService) Upload(ctx context.Context, req model.UploadRequest) (mod
 		}
 	}
 
-	fid, err := s.objectStore.Upload(ctx, filename, converted, "image/webp")
+	fid, err := s.objectStore.Upload(ctx, filename, storedData, storedMimeType)
 	if err != nil {
 		return model.ImageWithTags{}, fmt.Errorf("upload image object: %w", err)
 	}
@@ -127,10 +143,10 @@ func (s *ImageService) Upload(ctx context.Context, req model.UploadRequest) (mod
 	image := model.Image{
 		Filename:   filename,
 		FID:        fid,
-		FileSize:   int64(len(converted)),
+		FileSize:   int64(len(storedData)),
 		Width:      features.Width,
 		Height:     features.Height,
-		MimeType:   "image/webp",
+		MimeType:   storedMimeType,
 		PHash:      features.PHash,
 		IsAnimated: features.IsAnimated,
 		CreatedAt:  time.Now().UTC(),
@@ -311,6 +327,9 @@ func (s *ImageService) Render(ctx context.Context, id string, params model.Rende
 	if params.Width == 0 && params.Height == 0 && params.Format == "" && params.Quality > 0 {
 		params.Format = formatFromMimeType(image.MimeType)
 	}
+	if params.Format == "gif" && (params.Width > 0 || params.Height > 0 || params.Fit != "" || params.Quality > 0) {
+		return nil, apperr.Validationf("gif render does not support width, height, fit, or quality")
+	}
 
 	resp, err := s.processor.Render(ctx, s.objectStore.FileURL(image.FID), params)
 	if err != nil {
@@ -395,7 +414,7 @@ func parseImageID(raw string) (int64, error) {
 func normalizeRenderFormat(raw string) (string, error) {
 	format := strings.ToLower(strings.TrimSpace(raw))
 	switch format {
-	case "", "auto", "jpeg", "png", "webp":
+	case "", "auto", "gif", "jpeg", "png", "webp":
 		return format, nil
 	case "jpg":
 		return "jpeg", nil
@@ -408,11 +427,28 @@ func formatFromMimeType(mimeType string) string {
 	switch strings.ToLower(strings.TrimSpace(mimeType)) {
 	case "image/jpeg", "image/jpg":
 		return "jpeg"
+	case "image/gif":
+		return "gif"
 	case "image/png":
 		return "png"
 	case "image/webp":
 		return "webp"
 	default:
 		return "auto"
+	}
+}
+
+func normalizeSourceMimeType(mimeType string) string {
+	switch strings.ToLower(strings.TrimSpace(mimeType)) {
+	case "image/gif":
+		return "image/gif"
+	case "image/jpeg", "image/jpg":
+		return "image/jpeg"
+	case "image/png":
+		return "image/png"
+	case "image/webp":
+		return "image/webp"
+	default:
+		return "application/octet-stream"
 	}
 }

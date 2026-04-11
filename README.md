@@ -328,10 +328,10 @@ Authorization Bearer > 专用 Header > X-API-Token > token 查询参数
 
 - 上传字段名固定为 `file`。
 - `tags` 可以重复传多个，也可以逗号分隔。
-- 存储前会转为 **lossless WebP**。
-- 数据库存储的是转换后的：
+- 静态图存储前会转为 **lossless WebP**；动图会保留原始格式（例如 GIF）。
+- 数据库存储的是最终落库文件的：
   - `file_size`
-  - `mime_type`（固定为 `image/webp`）
+  - `mime_type`（静态图通常为 `image/webp`，动图会保留原始 MIME）
   - 宽高
   - `phash`
   - `is_animated`
@@ -374,13 +374,14 @@ Authorization Bearer > 专用 Header > X-API-Token > token 查询参数
 - `w` / `h`：宽高
 - `fit`：`cover` / `contain` / `fill` / `inside` / `outside`
 - `quality`：1~100
-- `format`：`jpeg` / `jpg` / `png` / `webp` / `auto`
+- `format`：`gif` / `jpeg` / `jpg` / `png` / `webp` / `auto`
 
 规则：
 
 - 如果 **完全不传任何转换参数**，直接返回原图
 - 如果设置了 `fit`，至少要提供 `w` 或 `h`
 - 如果只传 `quality` 或 `format`，可以在原尺寸基础上输出
+- `format=gif` 仅支持原尺寸导出；不能和 `w` / `h` / `fit` / `quality` 组合使用
 
 ---
 
