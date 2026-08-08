@@ -1,0 +1,64 @@
+version: "3.8"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gallery-service
+    restart: always
+    ports:
+      - "${GALLERY_PORT:-3000}:3000"
+    environment:
+      - DATABASE_URL=postgres://${POSTGRES_USER:-gallery}:${POSTGRES_PASSWORD:-changeme}@db:5432/${POSTGRES_DB:-gallery}
+      - BIND_ADDRESS=0.0.0.0:3000
+      - DATA_DIR=/app/data
+      - RUST_LOG=${RUST_LOG:-info}
+      - LOG_FORMAT=json
+      - DATABASE_MAX_CONNECTIONS=10
+      - REQUEST_BODY_LIMIT_MB=100
+      - AUTO_MIGRATE=true
+      - ORPHAN_CLEANUP_INTERVAL_HOURS=24
+    volumes:
+      - gallery_data:/app/data
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - gallery_network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+
+  db:
+    image: postgres:16-alpine
+    container_name: gallery-db
+    restart: always
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-gallery}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
+      - POSTGRES_DB=${POSTGRES_DB:-gallery}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - gallery_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gallery} -d ${POSTGRES_DB:-gallery}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+volumes:
+  gallery_data:
+  postgres_data:
+
+networks:
+  gallery_network:
+    driver: bridge
