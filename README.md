@@ -11,7 +11,7 @@ A containerized, highly performant, and reliable image gallery microservice buil
 2. **Global Upload Serialization**:
    All write operations are synchronized using an `Arc<tokio::sync::Mutex<()>>` lock to guarantee safe state execution and eliminate concurrency race conditions. CPU-heavy processing (decoding, hashing) is decoupled outside this lock to optimize throughput.
 3. **High-Dimensional Perceptual Duplicate Check**:
-   - **Static Images**: Combines 64-bit `aHash`, 128-bit vertical & horizontal `dHash`, and 64-bit `pHash` (DCT-based low-frequency coefficients二值化 via `rustdct`) for similarity validation.
+   - **Static Images**: Combines 64-bit `aHash`, 128-bit vertical & horizontal `dHash`, and 64-bit `pHash` (DCT-based low-frequency coefficients binarization via `rustdct`) for similarity validation.
    - **GIF Images**: Samplings of up to 5 uniform frames are merged using XOR aggregation to generate composite perceptual hashes.
    - **Bucket Search Index**: Features 4x16-bit integer indexing to filter and scale down query candidates to `~0.006%` for million-level sub-second matching.
 4. **Automated Background Orphan Cleanup**:
