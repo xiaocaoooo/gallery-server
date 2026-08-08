@@ -16,6 +16,8 @@ A containerized, highly performant, and reliable image gallery microservice buil
    - **Bucket Search Index**: Features 4x16-bit integer indexing to filter and scale down query candidates to `~0.006%` for million-level sub-second matching.
 4. **Automated Background Orphan Cleanup**:
    Features a background scheduling worker that periodically sweeps unused images (images not associated with any galleries) and temporary leftovers older than 24 hours.
+5. **Interactive OpenAPI / Swagger Documentation**:
+   Auto-generates comprehensive interactive REST documentation using `utoipa` and renders it via `utoipa-swagger-ui` directly at `/swagger-ui/`.
 
 ---
 
@@ -78,6 +80,14 @@ Ensure the service is fully up:
 ```bash
 curl -i http://localhost:3000/health
 ```
+
+### 4. Interactive OpenAPI Docs
+
+Open up your browser and visit:
+`http://localhost:3000/swagger-ui/`
+
+You can also access the raw JSON OpenAPI schema definition at:
+`http://localhost:3000/api-docs/openapi.json`
 
 ---
 

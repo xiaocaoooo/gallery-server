@@ -16,6 +16,8 @@
    - **分桶检索指纹**：提取 128位 dHash 水平部分的 4 段 16-bit 整数作为分桶键（`bucket1` - `bucket4`），将对比候选集极限缩减至 `~0.006%`，支撑百万级大图毫秒级对比。
 4. **全自动异步后台清理**：
    内置定时后台 Worker，周期性自动扫描并抹除未关联任何画廊的“孤儿图片”记录、以及存活超过 24 小时的临时垃圾。
+5. **交互式 OpenAPI / Swagger 接口文档**：
+   利用 `utoipa` 自动生成符合规范的交互式 RESTful 接口文档，并通过 `utoipa-swagger-ui` 直接在 `/swagger-ui/` 渲染提供。
 
 ---
 
@@ -78,6 +80,14 @@ docker compose up -d --build
 ```bash
 curl -i http://localhost:3000/health
 ```
+
+### 4. 交互式 OpenAPI 接口文档
+
+打开浏览器访问：
+`http://localhost:3000/swagger-ui/`
+
+你也可以直接获取原始的 JSON 格式 OpenAPI 描述定义：
+`http://localhost:3000/api-docs/openapi.json`
 
 ---
 
