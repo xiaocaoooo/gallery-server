@@ -51,3 +51,53 @@ impl Storage {
         Ok(dest)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_storage_paths() {
+        let base = PathBuf::from("/tmp/gallery_test");
+        let storage = Storage::new(&base);
+
+        assert_eq!(storage.tmp_dir, base.join("tmp"));
+
+        let hash_hex = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let expected_path = base
+            .join("images")
+            .join("0123")
+            .join("4567")
+            .join("89abcdef0123456789abcdef0123456789abcdef0123456789abcdef.jpg");
+
+        assert_eq!(storage.final_path(hash_hex, "jpg"), expected_path);
+    }
+
+    #[test]
+    fn test_atomic_persist() {
+        let temp_dir = tempdir().unwrap();
+        let storage = Storage::new(temp_dir.path());
+
+        // 1. 创建临时文件并写入数据
+        let mut temp_file = storage.temp_file().unwrap();
+        temp_file.write_all(b"image data").unwrap();
+
+        // 2. 准备哈希和后缀
+        let hash_hex = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
+        let ext = "png";
+
+        let final_path = storage.final_path(hash_hex, ext);
+        assert!(!final_path.exists());
+
+        // 3. 持久化移动文件
+        let result_path = storage.persist(temp_file, hash_hex, ext).unwrap();
+        assert_eq!(result_path, final_path);
+        assert!(final_path.exists());
+
+        // 4. 检验内容
+        let content = std::fs::read_to_string(&final_path).unwrap();
+        assert_eq!(content, "image data");
+    }
+}
