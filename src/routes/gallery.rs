@@ -1,3 +1,6 @@
+use crate::error::AppError;
+use crate::models::{AddAliasReq, CreateGalleryReq, Gallery, GalleryDetail, UpdateGalleryReq};
+use crate::state::AppState;
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
@@ -6,9 +9,6 @@ use axum::{
 };
 use serde::Deserialize;
 use uuid::Uuid;
-use crate::state::AppState;
-use crate::error::AppError;
-use crate::models::{CreateGalleryReq, UpdateGalleryReq, AddAliasReq, GalleryDetail, Gallery};
 
 #[derive(Debug, Deserialize)]
 pub struct SearchParams {
@@ -23,23 +23,20 @@ pub async fn create_gallery(
 ) -> Result<impl IntoResponse, AppError> {
     let mut tx = state.db.begin().await?;
 
-    let gallery = sqlx::query_as::<_, Gallery>(
-        "INSERT INTO galleries (name) VALUES ($1) RETURNING *"
-    )
-    .bind(&payload.name)
-    .fetch_one(&mut *tx)
-    .await?;
+    let gallery =
+        sqlx::query_as::<_, Gallery>("INSERT INTO galleries (name) VALUES ($1) RETURNING *")
+            .bind(&payload.name)
+            .fetch_one(&mut *tx)
+            .await?;
 
     let mut aliases = Vec::new();
     if let Some(alias_list) = payload.aliases {
         for alias in alias_list {
-            sqlx::query(
-                "INSERT INTO gallery_aliases (alias, gallery_id) VALUES ($1, $2)"
-            )
-            .bind(&alias)
-            .bind(gallery.id)
-            .execute(&mut *tx)
-            .await?;
+            sqlx::query("INSERT INTO gallery_aliases (alias, gallery_id) VALUES ($1, $2)")
+                .bind(&alias)
+                .bind(gallery.id)
+                .execute(&mut *tx)
+                .await?;
             aliases.push(alias);
         }
     }
@@ -68,7 +65,7 @@ pub async fn list_galleries(
         sqlx::query_as::<_, Gallery>(
             "SELECT DISTINCT g.* FROM galleries g
              LEFT JOIN gallery_aliases ga ON g.id = ga.gallery_id
-             WHERE g.name ILIKE '%' || $1 || '%' OR ga.alias ILIKE '%' || $1 || '%'"
+             WHERE g.name ILIKE '%' || $1 || '%' OR ga.alias ILIKE '%' || $1 || '%'",
         )
         .bind(search)
         .fetch_all(&state.db)
@@ -82,12 +79,12 @@ pub async fn list_galleries(
     let mut list = Vec::new();
     for g in galleries {
         let aliases = sqlx::query_scalar::<_, String>(
-            "SELECT alias FROM gallery_aliases WHERE gallery_id = $1"
+            "SELECT alias FROM gallery_aliases WHERE gallery_id = $1",
         )
         .bind(g.id)
         .fetch_all(&state.db)
         .await?;
-        
+
         list.push(GalleryDetail {
             id: g.id,
             name: g.name,
@@ -106,20 +103,17 @@ pub async fn get_gallery(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let gallery = sqlx::query_as::<_, Gallery>(
-        "SELECT * FROM galleries WHERE id = $1"
-    )
-    .bind(id)
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or(AppError::NotFound)?;
+    let gallery = sqlx::query_as::<_, Gallery>("SELECT * FROM galleries WHERE id = $1")
+        .bind(id)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or(AppError::NotFound)?;
 
-    let aliases = sqlx::query_scalar::<_, String>(
-        "SELECT alias FROM gallery_aliases WHERE gallery_id = $1"
-    )
-    .bind(gallery.id)
-    .fetch_all(&state.db)
-    .await?;
+    let aliases =
+        sqlx::query_scalar::<_, String>("SELECT alias FROM gallery_aliases WHERE gallery_id = $1")
+            .bind(gallery.id)
+            .fetch_all(&state.db)
+            .await?;
 
     Ok(Json(GalleryDetail {
         id: gallery.id,
@@ -138,7 +132,7 @@ pub async fn update_gallery(
     Json(payload): Json<UpdateGalleryReq>,
 ) -> Result<impl IntoResponse, AppError> {
     let gallery = sqlx::query_as::<_, Gallery>(
-        "UPDATE galleries SET name = $1, updated_at = NOW() WHERE id = $2 RETURNING *"
+        "UPDATE galleries SET name = $1, updated_at = NOW() WHERE id = $2 RETURNING *",
     )
     .bind(&payload.name)
     .bind(id)
@@ -146,12 +140,11 @@ pub async fn update_gallery(
     .await?
     .ok_or(AppError::NotFound)?;
 
-    let aliases = sqlx::query_scalar::<_, String>(
-        "SELECT alias FROM gallery_aliases WHERE gallery_id = $1"
-    )
-    .bind(gallery.id)
-    .fetch_all(&state.db)
-    .await?;
+    let aliases =
+        sqlx::query_scalar::<_, String>("SELECT alias FROM gallery_aliases WHERE gallery_id = $1")
+            .bind(gallery.id)
+            .fetch_all(&state.db)
+            .await?;
 
     Ok(Json(GalleryDetail {
         id: gallery.id,
@@ -189,12 +182,11 @@ pub async fn add_gallery_alias(
     Json(payload): Json<AddAliasReq>,
 ) -> Result<impl IntoResponse, AppError> {
     // 确保 gallery 存在
-    let exists = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM galleries WHERE id = $1)"
-    )
-    .bind(id)
-    .fetch_one(&state.db)
-    .await?;
+    let exists =
+        sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM galleries WHERE id = $1)")
+            .bind(id)
+            .fetch_one(&state.db)
+            .await?;
 
     if !exists {
         return Err(AppError::NotFound);
@@ -215,14 +207,13 @@ pub async fn delete_gallery_alias(
     State(state): State<AppState>,
     Path((id, alias)): Path<(Uuid, String)>,
 ) -> Result<impl IntoResponse, AppError> {
-    let rows_affected = sqlx::query(
-        "DELETE FROM gallery_aliases WHERE gallery_id = $1 AND alias = $2"
-    )
-    .bind(id)
-    .bind(&alias)
-    .execute(&state.db)
-    .await?
-    .rows_affected();
+    let rows_affected =
+        sqlx::query("DELETE FROM gallery_aliases WHERE gallery_id = $1 AND alias = $2")
+            .bind(id)
+            .bind(&alias)
+            .execute(&state.db)
+            .await?
+            .rows_affected();
 
     if rows_affected == 0 {
         return Err(AppError::NotFound);

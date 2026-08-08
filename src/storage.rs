@@ -35,12 +35,17 @@ impl Storage {
     }
 
     /// 原子移动。如果目标已存在（相同 SHA256），静默成功。
-    pub fn persist(&self, temp: NamedTempFile, hash_hex: &str, ext: &str) -> std::io::Result<PathBuf> {
+    pub fn persist(
+        &self,
+        temp: NamedTempFile,
+        hash_hex: &str,
+        ext: &str,
+    ) -> std::io::Result<PathBuf> {
         let dest = self.final_path(hash_hex, ext);
         if let Some(parent) = dest.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        
+
         // Linux 下同文件系统 rename 是原子的，且会覆盖已存在文件
         temp.persist(&dest).map_err(|e| e.error)?;
         Ok(dest)

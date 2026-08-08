@@ -1,3 +1,5 @@
+use crate::error::AppError;
+use crate::state::AppState;
 use axum::{
     body::Body,
     extract::{Path, State},
@@ -5,8 +7,6 @@ use axum::{
     response::IntoResponse,
 };
 use uuid::Uuid;
-use crate::state::AppState;
-use crate::error::AppError;
 
 // GET /files/:image_id
 #[utoipa::path(get, path = "/files/{image_id}", params(("image_id" = Uuid, Path, description = "Image UUID")), responses((status = 200, description = "Original image physical file stream retrieved successfully"), (status = 404, description = "Image file not found")))]
@@ -14,13 +14,11 @@ pub async fn serve_file(
     State(state): State<AppState>,
     Path(image_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let row = sqlx::query(
-        "SELECT sha256_hex, ext FROM images WHERE id = $1"
-    )
-    .bind(image_id)
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or(AppError::NotFound)?;
+    let row = sqlx::query("SELECT sha256_hex, ext FROM images WHERE id = $1")
+        .bind(image_id)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or(AppError::NotFound)?;
 
     use sqlx::Row;
     let sha256_hex: String = row.try_get("sha256_hex")?;

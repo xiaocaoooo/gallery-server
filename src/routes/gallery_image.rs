@@ -1,19 +1,19 @@
+use crate::db::find_perceptual_duplicate;
+use crate::error::AppError;
+use crate::hash::perceptual;
+use crate::hash::sha256::StreamSha256;
+use crate::models::{Image, ImageDetail};
+use crate::state::AppState;
 use axum::{
-    extract::{Path, Multipart, Query, State},
+    extract::{Multipart, Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     Json,
 };
-use serde::Deserialize;
-use uuid::Uuid;
-use std::io::Write;
 use image::GenericImageView;
-use crate::state::AppState;
-use crate::error::AppError;
-use crate::models::{ImageDetail, Image};
-use crate::hash::sha256::StreamSha256;
-use crate::hash::perceptual;
-use crate::db::find_perceptual_duplicate;
+use serde::Deserialize;
+use std::io::Write;
+use uuid::Uuid;
 
 #[derive(Debug, Deserialize)]
 pub struct UploadParams {
@@ -29,12 +29,11 @@ pub async fn upload_image(
     mut multipart: Multipart,
 ) -> Result<impl IntoResponse, AppError> {
     // 确保 gallery 存在
-    let exists = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM galleries WHERE id = $1)"
-    )
-    .bind(gallery_id)
-    .fetch_one(&state.db)
-    .await?;
+    let exists =
+        sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM galleries WHERE id = $1)")
+            .bind(gallery_id)
+            .fetch_one(&state.db)
+            .await?;
 
     if !exists {
         return Err(AppError::NotFound);
@@ -101,17 +100,15 @@ pub async fn upload_image(
     let mut tx = state.db.begin().await?;
 
     // Check if image already exists by SHA256
-    let existing_image = sqlx::query_as::<_, Image>(
-        "SELECT * FROM images WHERE sha256_hash = $1"
-    )
-    .bind(&sha256_hash)
-    .fetch_optional(&mut *tx)
-    .await?;
+    let existing_image = sqlx::query_as::<_, Image>("SELECT * FROM images WHERE sha256_hash = $1")
+        .bind(&sha256_hash)
+        .fetch_optional(&mut *tx)
+        .await?;
 
     if let Some(img) = existing_image {
         // [复用分支]
         let link_exists = sqlx::query_scalar::<_, bool>(
-            "SELECT EXISTS(SELECT 1 FROM gallery_images WHERE gallery_id = $1 AND image_id = $2)"
+            "SELECT EXISTS(SELECT 1 FROM gallery_images WHERE gallery_id = $1 AND image_id = $2)",
         )
         .bind(gallery_id)
         .bind(img.id)
@@ -123,25 +120,23 @@ pub async fn upload_image(
             return Err(AppError::AlreadyInGallery);
         }
 
-        sqlx::query(
-            "INSERT INTO gallery_images (gallery_id, image_id) VALUES ($1, $2)"
-        )
-        .bind(gallery_id)
-        .bind(img.id)
-        .execute(&mut *tx)
-        .await?;
+        sqlx::query("INSERT INTO gallery_images (gallery_id, image_id) VALUES ($1, $2)")
+            .bind(gallery_id)
+            .bind(img.id)
+            .execute(&mut *tx)
+            .await?;
 
-        let aliases = sqlx::query_scalar::<_, String>(
-            "SELECT alias FROM image_aliases WHERE image_id = $1"
-        )
-        .bind(img.id)
-        .fetch_all(&mut *tx)
-        .await?;
+        let aliases =
+            sqlx::query_scalar::<_, String>("SELECT alias FROM image_aliases WHERE image_id = $1")
+                .bind(img.id)
+                .fetch_all(&mut *tx)
+                .await?;
 
         tx.commit().await?;
 
         // 成功，删除临时文件
-        let _ = tokio::fs::remove_file(&temp_path).await;        return Ok((
+        let _ = tokio::fs::remove_file(&temp_path).await;
+        return Ok((
             StatusCode::OK,
             Json(ImageDetail {
                 id: img.id,
@@ -174,7 +169,9 @@ pub async fn upload_image(
 
         if let Some(dup) = duplicate {
             tx.rollback().await?;
-            return Err(AppError::PerceptualDuplicate { image_id: dup.image_id });
+            return Err(AppError::PerceptualDuplicate {
+                image_id: dup.image_id,
+            });
         }
     }
 
@@ -184,7 +181,7 @@ pub async fn upload_image(
     // 写入 images 表
     let img = sqlx::query_as::<_, Image>(
         "INSERT INTO images (sha256_hash, ext, width, height, size_bytes)
-         VALUES ($1, $2, $3, $4, $5) RETURNING *"
+         VALUES ($1, $2, $3, $4, $5) RETURNING *",
     )
     .bind(&sha256_hash)
     .bind(&ext)
@@ -202,11 +199,15 @@ pub async fn upload_image(
         "INSERT INTO perceptual_hashes (
             image_id, is_gif, frame_count, ahash, dhash_h, dhash_v, phash,
             bucket1, bucket2, bucket3, bucket4, frame_hashes
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)"
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
     )
     .bind(img.id)
     .bind(is_gif)
-    .bind(if is_gif { perceptual_hash.frame_hashes.len() as i32 } else { 1 })
+    .bind(if is_gif {
+        perceptual_hash.frame_hashes.len() as i32
+    } else {
+        1
+    })
     .bind(perceptual_hash.ahash)
     .bind(perceptual_hash.dhash_h)
     .bind(perceptual_hash.dhash_v)
@@ -220,13 +221,11 @@ pub async fn upload_image(
     .await?;
 
     // 写入 gallery_images 表
-    sqlx::query(
-        "INSERT INTO gallery_images (gallery_id, image_id) VALUES ($1, $2)"
-    )
-    .bind(gallery_id)
-    .bind(img.id)
-    .execute(&mut *tx)
-    .await?;
+    sqlx::query("INSERT INTO gallery_images (gallery_id, image_id) VALUES ($1, $2)")
+        .bind(gallery_id)
+        .bind(img.id)
+        .execute(&mut *tx)
+        .await?;
 
     tx.commit().await?;
 
@@ -255,12 +254,11 @@ pub async fn list_gallery_images(
     Path(gallery_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     // 确保 gallery 存在
-    let exists = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM galleries WHERE id = $1)"
-    )
-    .bind(gallery_id)
-    .fetch_one(&state.db)
-    .await?;
+    let exists =
+        sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM galleries WHERE id = $1)")
+            .bind(gallery_id)
+            .fetch_one(&state.db)
+            .await?;
 
     if !exists {
         return Err(AppError::NotFound);
@@ -270,7 +268,7 @@ pub async fn list_gallery_images(
         "SELECT i.* FROM images i
          JOIN gallery_images gi ON i.id = gi.image_id
          WHERE gi.gallery_id = $1
-         ORDER BY gi.created_at DESC"
+         ORDER BY gi.created_at DESC",
     )
     .bind(gallery_id)
     .fetch_all(&state.db)
@@ -278,12 +276,11 @@ pub async fn list_gallery_images(
 
     let mut list = Vec::new();
     for img in images {
-        let aliases = sqlx::query_scalar::<_, String>(
-            "SELECT alias FROM image_aliases WHERE image_id = $1"
-        )
-        .bind(img.id)
-        .fetch_all(&state.db)
-        .await?;
+        let aliases =
+            sqlx::query_scalar::<_, String>("SELECT alias FROM image_aliases WHERE image_id = $1")
+                .bind(img.id)
+                .fetch_all(&state.db)
+                .await?;
         list.push(ImageDetail {
             id: img.id,
             sha256_hex: img.sha256_hex,
@@ -308,14 +305,13 @@ pub async fn remove_image_from_gallery(
     State(state): State<AppState>,
     Path((gallery_id, image_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
-    let rows_affected = sqlx::query(
-        "DELETE FROM gallery_images WHERE gallery_id = $1 AND image_id = $2"
-    )
-    .bind(gallery_id)
-    .bind(image_id)
-    .execute(&state.db)
-    .await?
-    .rows_affected();
+    let rows_affected =
+        sqlx::query("DELETE FROM gallery_images WHERE gallery_id = $1 AND image_id = $2")
+            .bind(gallery_id)
+            .bind(image_id)
+            .execute(&state.db)
+            .await?
+            .rows_affected();
 
     if rows_affected == 0 {
         return Err(AppError::NotFound);

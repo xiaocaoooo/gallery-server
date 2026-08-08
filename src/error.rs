@@ -5,22 +5,22 @@ use serde_json::json;
 pub enum AppError {
     #[error("Not found")]
     NotFound,
-    
+
     #[error("Conflict: {0}")]
     Conflict(String),
-    
+
     #[error("Bad request: {0}")]
     BadRequest(String),
-    
+
     #[error("Duplicate in gallery")]
     AlreadyInGallery,
-    
+
     #[error("Perceptual duplicate detected: {image_id}")]
     PerceptualDuplicate { image_id: uuid::Uuid },
-    
+
     #[error(transparent)]
     Sqlx(#[from] sqlx::Error),
-    
+
     #[error(transparent)]
     Io(#[from] std::io::Error),
 
@@ -48,17 +48,22 @@ impl IntoResponse for AppError {
                         "error": "Perceptual duplicate detected",
                         "image_id": image_id
                     })),
-                ).into_response();
+                )
+                    .into_response();
             }
             Self::Image(e) => (StatusCode::BAD_REQUEST, format!("Invalid image: {}", e)),
             Self::Multipart(e) => (StatusCode::BAD_REQUEST, format!("Multipart error: {}", e)),
             Self::Sqlx(e) => {
                 if let sqlx::Error::Database(db) = e {
                     if db.constraint().is_some() {
-                        return (StatusCode::CONFLICT, Json(json!({ "error": db.message() }))).into_response();
+                        return (StatusCode::CONFLICT, Json(json!({ "error": db.message() })))
+                            .into_response();
                     }
                 }
-                (StatusCode::INTERNAL_SERVER_ERROR, format!("Database error: {}", e))
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Database error: {}", e),
+                )
             }
             _ => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
         };

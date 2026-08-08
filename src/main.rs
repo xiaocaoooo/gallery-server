@@ -1,37 +1,32 @@
+mod background;
 mod config;
+mod db;
 mod error;
-mod state;
-mod storage;
 mod hash;
 mod models;
-mod db;
 mod routes;
-mod background;
+mod state;
+mod storage;
 
-use axum::{
-    extract::State,
-    http::StatusCode,
-    response::IntoResponse,
-    Json,
-    Router,
-};
-use tower::ServiceBuilder;
-use tower_http::trace::TraceLayer;
-use tower_http::limit::RequestBodyLimitLayer;
-use sqlx::postgres::{PgPoolOptions, PgConnectOptions};
+use axum::{extract::State, http::StatusCode, response::IntoResponse, Json, Router};
+use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::PgPool;
 use std::net::SocketAddr;
+use tower::ServiceBuilder;
+use tower_http::limit::RequestBodyLimitLayer;
+use tower_http::trace::TraceLayer;
 
 use crate::config::{Config, LogFormat};
 use crate::state::AppState;
 
 pub async fn create_pool(config: &Config) -> Result<PgPool, sqlx::Error> {
-    let connect_options = config.database_url.parse::<PgConnectOptions>()?
-        .ssl_mode(match config.database_ssl_mode.as_str() {
+    let connect_options = config.database_url.parse::<PgConnectOptions>()?.ssl_mode(
+        match config.database_ssl_mode.as_str() {
             "disable" => sqlx::postgres::PgSslMode::Disable,
             "require" => sqlx::postgres::PgSslMode::Require,
             _ => sqlx::postgres::PgSslMode::Prefer,
-        });
+        },
+    );
 
     PgPoolOptions::new()
         .max_connections(config.database_max_connections)
@@ -46,13 +41,14 @@ pub async fn run_migrations(pool: &PgPool) -> Result<(), sqlx::migrate::MigrateE
 
 // GET /health
 async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
-    let db_healthy = sqlx::query("SELECT 1")
-        .fetch_one(&state.db)
-        .await
-        .is_ok();
+    let db_healthy = sqlx::query("SELECT 1").fetch_one(&state.db).await.is_ok();
 
     let status = if db_healthy { "healthy" } else { "unhealthy" };
-    let code = if db_healthy { StatusCode::OK } else { StatusCode::SERVICE_UNAVAILABLE };
+    let code = if db_healthy {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
 
     (
         code,
@@ -60,7 +56,7 @@ async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
             "status": status,
             "database": db_healthy,
             "timestamp": chrono::Utc::now().to_rfc3339()
-        }))
+        })),
     )
 }
 
@@ -85,7 +81,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 初始化日志
     init_tracing(&config);
 
-    let pool = create_pool(&config).await.expect("Database connection failed");
+    let pool = create_pool(&config)
+        .await
+        .expect("Database connection failed");
 
     if config.auto_migrate {
         run_migrations(&pool).await.expect("Migration failed");
@@ -103,8 +101,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             ServiceBuilder::new()
                 .layer(TraceLayer::new_for_http())
                 .layer(RequestBodyLimitLayer::new(
-                    state.config.request_body_limit_mb * 1024 * 1024
-                ))
+                    state.config.request_body_limit_mb * 1024 * 1024,
+                )),
         )
         .with_state(state);
 

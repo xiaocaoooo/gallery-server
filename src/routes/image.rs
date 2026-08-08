@@ -1,3 +1,6 @@
+use crate::error::AppError;
+use crate::models::{AddAliasReq, Image, ImageDetail, UpdateImageReq};
+use crate::state::AppState;
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
@@ -6,9 +9,6 @@ use axum::{
 };
 use serde::Deserialize;
 use uuid::Uuid;
-use crate::state::AppState;
-use crate::error::AppError;
-use crate::models::{UpdateImageReq, AddAliasReq, ImageDetail, Image};
 
 #[derive(Debug, Deserialize)]
 pub struct ImageQueryParams {
@@ -69,12 +69,11 @@ pub async fn list_images(
 
     let mut list = Vec::new();
     for img in images {
-        let aliases = sqlx::query_scalar::<_, String>(
-            "SELECT alias FROM image_aliases WHERE image_id = $1"
-        )
-        .bind(img.id)
-        .fetch_all(&state.db)
-        .await?;
+        let aliases =
+            sqlx::query_scalar::<_, String>("SELECT alias FROM image_aliases WHERE image_id = $1")
+                .bind(img.id)
+                .fetch_all(&state.db)
+                .await?;
         list.push(ImageDetail {
             id: img.id,
             sha256_hex: img.sha256_hex,
@@ -99,20 +98,17 @@ pub async fn get_image(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let img = sqlx::query_as::<_, Image>(
-        "SELECT * FROM images WHERE id = $1"
-    )
-    .bind(id)
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or(AppError::NotFound)?;
+    let img = sqlx::query_as::<_, Image>("SELECT * FROM images WHERE id = $1")
+        .bind(id)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or(AppError::NotFound)?;
 
-    let aliases = sqlx::query_scalar::<_, String>(
-        "SELECT alias FROM image_aliases WHERE image_id = $1"
-    )
-    .bind(img.id)
-    .fetch_all(&state.db)
-    .await?;
+    let aliases =
+        sqlx::query_scalar::<_, String>("SELECT alias FROM image_aliases WHERE image_id = $1")
+            .bind(img.id)
+            .fetch_all(&state.db)
+            .await?;
 
     Ok(Json(ImageDetail {
         id: img.id,
@@ -141,19 +137,18 @@ pub async fn get_image_by_hash_prefix(
         return Err(AppError::BadRequest("Invalid hex prefix".into()));
     }
 
-    let rows = sqlx::query_as::<_, Image>(
-        "SELECT * FROM images WHERE sha256_hex LIKE $1 || '%' LIMIT 2"
-    )
-    .bind(&prefix_lower)
-    .fetch_all(&state.db)
-    .await?;
+    let rows =
+        sqlx::query_as::<_, Image>("SELECT * FROM images WHERE sha256_hex LIKE $1 || '%' LIMIT 2")
+            .bind(&prefix_lower)
+            .fetch_all(&state.db)
+            .await?;
 
     match rows.len() {
         0 => Err(AppError::NotFound),
         1 => {
             let img = &rows[0];
             let aliases = sqlx::query_scalar::<_, String>(
-                "SELECT alias FROM image_aliases WHERE image_id = $1"
+                "SELECT alias FROM image_aliases WHERE image_id = $1",
             )
             .bind(img.id)
             .fetch_all(&state.db)
@@ -172,9 +167,10 @@ pub async fn get_image_by_hash_prefix(
                 aliases,
             }))
         }
-        _ => Err(AppError::Conflict(
-            format!("Prefix '{}' matches multiple images", prefix)
-        )),
+        _ => Err(AppError::Conflict(format!(
+            "Prefix '{}' matches multiple images",
+            prefix
+        ))),
     }
 }
 
@@ -186,17 +182,19 @@ pub async fn update_image(
     Json(payload): Json<UpdateImageReq>,
 ) -> Result<impl IntoResponse, AppError> {
     // 先获取原信息
-    let mut img = sqlx::query_as::<_, Image>(
-        "SELECT * FROM images WHERE id = $1"
-    )
-    .bind(id)
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or(AppError::NotFound)?;
+    let mut img = sqlx::query_as::<_, Image>("SELECT * FROM images WHERE id = $1")
+        .bind(id)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or(AppError::NotFound)?;
 
     let mut name = img.name;
     if let Some(new_name) = payload.name {
-        name = if new_name.is_empty() { None } else { Some(new_name) };
+        name = if new_name.is_empty() {
+            None
+        } else {
+            Some(new_name)
+        };
     }
 
     let mut metadata = img.metadata;
@@ -205,7 +203,7 @@ pub async fn update_image(
     }
 
     img = sqlx::query_as::<_, Image>(
-        "UPDATE images SET name = $1, metadata = $2, updated_at = NOW() WHERE id = $3 RETURNING *"
+        "UPDATE images SET name = $1, metadata = $2, updated_at = NOW() WHERE id = $3 RETURNING *",
     )
     .bind(name)
     .bind(metadata)
@@ -213,12 +211,11 @@ pub async fn update_image(
     .fetch_one(&state.db)
     .await?;
 
-    let aliases = sqlx::query_scalar::<_, String>(
-        "SELECT alias FROM image_aliases WHERE image_id = $1"
-    )
-    .bind(img.id)
-    .fetch_all(&state.db)
-    .await?;
+    let aliases =
+        sqlx::query_scalar::<_, String>("SELECT alias FROM image_aliases WHERE image_id = $1")
+            .bind(img.id)
+            .fetch_all(&state.db)
+            .await?;
 
     Ok(Json(ImageDetail {
         id: img.id,
@@ -243,12 +240,10 @@ pub async fn add_image_alias(
     Json(payload): Json<AddAliasReq>,
 ) -> Result<impl IntoResponse, AppError> {
     // 确保 image 存在
-    let exists = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM images WHERE id = $1)"
-    )
-    .bind(id)
-    .fetch_one(&state.db)
-    .await?;
+    let exists = sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM images WHERE id = $1)")
+        .bind(id)
+        .fetch_one(&state.db)
+        .await?;
 
     if !exists {
         return Err(AppError::NotFound);
@@ -269,14 +264,12 @@ pub async fn delete_image_alias(
     State(state): State<AppState>,
     Path((id, alias)): Path<(Uuid, String)>,
 ) -> Result<impl IntoResponse, AppError> {
-    let rows_affected = sqlx::query(
-        "DELETE FROM image_aliases WHERE image_id = $1 AND alias = $2"
-    )
-    .bind(id)
-    .bind(&alias)
-    .execute(&state.db)
-    .await?
-    .rows_affected();
+    let rows_affected = sqlx::query("DELETE FROM image_aliases WHERE image_id = $1 AND alias = $2")
+        .bind(id)
+        .bind(&alias)
+        .execute(&state.db)
+        .await?
+        .rows_affected();
 
     if rows_affected == 0 {
         return Err(AppError::NotFound);

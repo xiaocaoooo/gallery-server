@@ -1,8 +1,8 @@
+use crate::config::Config;
+use crate::storage::Storage;
+use sqlx::PgPool;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use sqlx::PgPool;
-use crate::storage::Storage;
-use crate::config::Config;
 
 #[derive(Clone)]
 pub struct AppState {

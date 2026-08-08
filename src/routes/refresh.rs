@@ -1,13 +1,8 @@
-use axum::{
-    extract::State,
-    http::StatusCode,
-    response::IntoResponse,
-    Json,
-};
-use crate::state::AppState;
 use crate::error::AppError;
-use crate::models::RefreshReq;
 use crate::hash::perceptual;
+use crate::models::RefreshReq;
+use crate::state::AppState;
+use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 
 // POST /refresh
 #[utoipa::path(post, path = "/refresh", request_body = RefreshReq, responses((status = 202, description = "Refresh tasks scheduled in background successfully")))]
@@ -41,7 +36,10 @@ pub async fn refresh_tasks(
         }
     });
 
-    Ok((StatusCode::ACCEPTED, Json(serde_json::json!({ "status": "Refresh tasks scheduled in background" }))))
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(serde_json::json!({ "status": "Refresh tasks scheduled in background" })),
+    ))
 }
 
 async fn run_clear_orphans(state: &AppState) -> Result<(), AppError> {
@@ -49,7 +47,7 @@ async fn run_clear_orphans(state: &AppState) -> Result<(), AppError> {
     let orphans = sqlx::query(
         "SELECT id, sha256_hex, ext FROM images i
          LEFT JOIN gallery_images gi ON i.id = gi.image_id
-         WHERE gi.image_id IS NULL"
+         WHERE gi.image_id IS NULL",
     )
     .fetch_all(&state.db)
     .await?;
@@ -59,7 +57,7 @@ async fn run_clear_orphans(state: &AppState) -> Result<(), AppError> {
         let id: uuid::Uuid = o.try_get("id")?;
         let sha256_hex: String = o.try_get("sha256_hex")?;
         let ext: String = o.try_get("ext")?;
-        
+
         let path = state.storage.final_path(&sha256_hex, &ext);
         if tokio::fs::remove_file(&path).await.is_ok() {
             tracing::info!("Removed orphan file: {:?}", path);
@@ -125,7 +123,7 @@ async fn run_refresh_hashes(state: &AppState) -> Result<(), AppError> {
              ahash=$1, dhash_h=$2, dhash_v=$3, phash=$4,
              bucket1=$5, bucket2=$6, bucket3=$7, bucket4=$8,
              frame_hashes=$9
-             WHERE image_id=$10"
+             WHERE image_id=$10",
         )
         .bind(perceptual_hash.ahash)
         .bind(perceptual_hash.dhash_h)

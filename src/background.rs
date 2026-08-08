@@ -1,5 +1,5 @@
-use crate::state::AppState;
 use crate::error::AppError;
+use crate::state::AppState;
 
 pub fn spawn_background_tasks(state: AppState) {
     let hours = state.config.orphan_cleanup_interval_hours;
@@ -30,7 +30,7 @@ async fn cleanup_orphans(state: &AppState) -> Result<(), AppError> {
     let orphans = sqlx::query(
         "SELECT i.id, i.sha256_hex, i.ext FROM images i
          LEFT JOIN gallery_images gi ON i.id = gi.image_id
-         WHERE gi.image_id IS NULL"
+         WHERE gi.image_id IS NULL",
     )
     .fetch_all(&state.db)
     .await?;
@@ -58,7 +58,9 @@ async fn cleanup_orphans(state: &AppState) -> Result<(), AppError> {
         while let Some(entry) = entries.next_entry().await? {
             let meta = entry.metadata().await?;
             if let Ok(modified) = meta.modified() {
-                let age = std::time::SystemTime::now().duration_since(modified).unwrap_or_default();
+                let age = std::time::SystemTime::now()
+                    .duration_since(modified)
+                    .unwrap_or_default();
                 // 删除超过 24 小时的临时文件
                 if age > std::time::Duration::from_secs(86400) {
                     let _ = tokio::fs::remove_file(entry.path()).await;

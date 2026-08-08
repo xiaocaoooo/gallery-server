@@ -37,7 +37,10 @@ impl Config {
             .map(std::path::PathBuf::from)
             .unwrap_or_else(|_| data_dir.join("tmp"));
 
-        let log_format = match env::var("LOG_FORMAT").unwrap_or_else(|_| "pretty".to_string()).as_str() {
+        let log_format = match env::var("LOG_FORMAT")
+            .unwrap_or_else(|_| "pretty".to_string())
+            .as_str()
+        {
             "json" => LogFormat::Json,
             _ => LogFormat::Pretty,
         };
@@ -46,13 +49,15 @@ impl Config {
             bind_address: env::var("BIND_ADDRESS").unwrap_or_else(|_| "0.0.0.0:3000".to_string()),
             data_dir: data_dir.clone(),
             tmp_dir,
-            database_url: env::var("DATABASE_URL")
-                .unwrap_or_else(|_| "postgres://gallery:changeme@localhost:5432/gallery".to_string()),
+            database_url: env::var("DATABASE_URL").unwrap_or_else(|_| {
+                "postgres://gallery:changeme@localhost:5432/gallery".to_string()
+            }),
             database_max_connections: env::var("DATABASE_MAX_CONNECTIONS")
                 .ok()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(10),
-            database_ssl_mode: env::var("DATABASE_SSL_MODE").unwrap_or_else(|_| "prefer".to_string()),
+            database_ssl_mode: env::var("DATABASE_SSL_MODE")
+                .unwrap_or_else(|_| "prefer".to_string()),
             request_body_limit_mb: env::var("REQUEST_BODY_LIMIT_MB")
                 .ok()
                 .and_then(|s| s.parse().ok())
@@ -107,7 +112,10 @@ impl Config {
         std::fs::write(&test_tmp, b"test").map_err(|e| format!("FS check failed: {}", e))?;
         std::fs::rename(&test_tmp, &test_dest).map_err(|e| {
             let _ = std::fs::remove_file(&test_tmp);
-            format!("tmp_dir and images_dir must be on the same filesystem: {}", e)
+            format!(
+                "tmp_dir and images_dir must be on the same filesystem: {}",
+                e
+            )
         })?;
         let _ = std::fs::remove_file(&test_dest);
 
